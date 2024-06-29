@@ -1,5 +1,5 @@
 # cmake-format: off
-# /CMakeLists.txt -*-makefile-*-
+# /CMakeLists.txt -*-cmake-*-
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 # cmake-format: on
 
@@ -8,7 +8,8 @@ cmake_minimum_required(VERSION 3.10)
 project(
   beman_optional26
   VERSION 0.0.0
-  LANGUAGES CXX)
+  LANGUAGES CXX
+)
 
 enable_testing()
 
