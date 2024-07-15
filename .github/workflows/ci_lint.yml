@@ -1,0 +1,117 @@
+name: CI Lint
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+jobs:
+  build:
+    name: ${{ matrix.config.name }}
+    runs-on: ${{ matrix.config.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          - {name: "Lint Cpp", os: ubuntu-24.04}
+          - {name: "Lint Shell", os: ubuntu-24.04}
+          - {name: "Lint Markdown", os: ubuntu-24.04}
+          - {name: "Lint YAML", os: ubuntu-24.04}
+          - {name: "Lint Cmake", os: ubuntu-24.04}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Activate verbose shell
+        run: set -x
+      - name: Install Cpp linter
+        if: startsWith(matrix.config.name, 'Lint Cpp')
+        run: |
+          set -x
+          cat /etc/lsb-release
+          installed_clang_version=18
+          sudo apt-get remove clang-${installed_clang_version} \
+            lldb-${installed_clang_version} \
+            lld-${installed_clang_version} \
+            clangd-${installed_clang_version} \
+            clang-tidy-${installed_clang_version} \
+            clang-format-${installed_clang_version} \
+            clang-tools-${installed_clang_version} \
+            llvm-${installed_clang_version}-dev \
+            lld-${installed_clang_version} \
+            lldb-${installed_clang_version} \
+            llvm-${installed_clang_version}-tools \
+            libomp-${installed_clang_version}-dev \
+            libc++-${installed_clang_version}-dev \
+            libc++abi-${installed_clang_version}-dev \
+            libclang-common-${installed_clang_version}-dev \
+            libclang-${installed_clang_version}-dev \
+            libclang-cpp${installed_clang_version}-dev \
+            libunwind-${installed_clang_version}-dev
+          wget https://apt.llvm.org/llvm.sh
+          chmod +x llvm.sh
+          sudo ./llvm.sh 19 all
+          sudo apt-get install libc++-dev libc++1 libc++abi-dev libc++abi1
+          sudo update-alternatives --install /usr/bin/clang-format clang-format /usr/bin/clang-format-19 10
+      - name: Check Cpp linter
+        if: startsWith(matrix.config.name, 'Lint Cpp')
+        run: |
+          clang-format --version
+      - name: Run Cpp linter
+        if: startsWith(matrix.config.name, 'Lint Cpp')
+        run: |
+          scripts/lint.sh --verbose --cpp
+      - name: Install Shell linter
+        if: startsWith(matrix.config.name, 'Lint Shell')
+        run: |
+          sudo apt-get update &> /dev/null
+          sudo apt-get install shellcheck
+      - name: Check Shell linter
+        if: startsWith(matrix.config.name, 'Lint Shell')
+        run: |
+          shellcheck --version
+      - name: Run Shell linter
+        if: startsWith(matrix.config.name, 'Lint Shell')
+        run: |
+          scripts/lint.sh --verbose --shell
+      - name: Install Markdown linter
+        if: startsWith(matrix.config.name, 'Lint Markdown')
+        run: |
+          sudo apt-get update &> /dev/null
+          sudo apt-get install -y npm
+          sudo npm install -g markdownlint-cli
+      - name: Check Markdown linter
+        if: startsWith(matrix.config.name, 'Lint Markdown')
+        run: |
+          markdownlint --version
+      - name: Run Markdown linter
+        if: startsWith(matrix.config.name, 'Lint Markdown')
+        run: |
+          scripts/lint.sh --verbose --markdown
+      - name: Install Yaml linter
+        if: startsWith(matrix.config.name, 'Lint YAML')
+        run: |
+          sudo apt-get update &> /dev/null
+          sudo apt-get install -y yamllint
+      - name: Check Yaml linter
+        if: startsWith(matrix.config.name, 'Lint YAML')
+        run: |
+          yamllint --version
+      - name: Run Yaml linter
+        if: startsWith(matrix.config.name, 'Lint YAML')
+        run: |
+          scripts/lint.sh --verbose --yaml
+      - name: Install Cmake linter
+        if: startsWith(matrix.config.name, 'Lint Cmake')
+        run: |
+          sudo apt-get update &> /dev/null
+          sudo apt-get install -y cmake-format
+      - name: Check Cmake linter
+        if: startsWith(matrix.config.name, 'Lint Cmake')
+        run: |
+          cmake-format --version
+      - name: Run Cmake linter
+        if: startsWith(matrix.config.name, 'Lint Cmake')
+        run: |
+          scripts/lint.sh --verbose --cmake
+
+
+
+          

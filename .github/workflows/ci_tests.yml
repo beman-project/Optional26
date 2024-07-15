@@ -1,0 +1,81 @@
+name: CI Tests
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+jobs:
+  build:
+    name: ${{ matrix.config.name }}
+    runs-on: ${{ matrix.config.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          - {name: "Ubuntu Clang 19|C++20", os: ubuntu-24.04, toolchain: clang-19, std: 20, cmake_config: RelWithDebInfo, clang_version: 19, installed_clang_version: 18}
+          - {name: "Ubuntu Clang 19|C++23", os: ubuntu-24.04, toolchain: clang-19, std: 23, cmake_config: RelWithDebInfo, clang_version: 19, installed_clang_version: 18}
+          - {name: "Ubuntu Clang 19|C++26", os: ubuntu-24.04, toolchain: clang-19, std: 26, cmake_config: RelWithDebInfo, clang_version: 19, installed_clang_version: 18}
+
+
+          - {name: "Ubuntu Clang 18|C++20", os: ubuntu-24.04, toolchain: clang-18, std: 20, cmake_config: Asan, clang_version: 18, installed_clang_version: 18}
+          - {name: "Ubuntu Clang 18|C++23", os: ubuntu-24.04, toolchain: clang-18, std: 23, cmake_config: Asan, clang_version: 18, installed_clang_version: 18}
+          - {name: "Ubuntu Clang 18|C++26", os: ubuntu-24.04, toolchain: clang-18, std: 26, cmake_config: Asan, clang_version: 18, installed_clang_version: 18}
+
+          - {name: "Ubuntu Clang 17|C++20", os: ubuntu-24.04, toolchain: clang-17, std: 20, cmake_config: Asan, clang_version: 17, installed_clang_version: 18}
+          - {name: "Ubuntu Clang 17|C++23", os: ubuntu-24.04, toolchain: clang-17, std: 23, cmake_config: Asan, clang_version: 17, installed_clang_version: 18}
+          - {name: "Ubuntu Clang 17|C++26", os: ubuntu-24.04, toolchain: clang-17, std: 26, cmake_config: Asan, clang_version: 17, installed_clang_version: 18}
+
+
+          - {name: "Ubuntu   GCC 14|C++20", os: ubuntu-24.04, toolchain: gcc-14, std: 20, cmake_config: Asan, clang_version: -1, installed_clang_version: -1}
+          - {name: "Ubuntu   GCC 14|C++23", os: ubuntu-24.04, toolchain: gcc-14, std: 23, cmake_config: Asan, clang_version: -1, installed_clang_version: -1}
+          - {name: "Ubuntu   GCC 14|C++26", os: ubuntu-24.04, toolchain: gcc-14, std: 26, cmake_config: Asan, clang_version: -1, installed_clang_version: -1}
+
+          - {name: "Ubuntu   GCC 13|C++20", os: ubuntu-24.04, toolchain: gcc-13, std: 20, cmake_config: Asan, clang_version: -1, installed_clang_version: -1}
+          - {name: "Ubuntu   GCC 13|C++23", os: ubuntu-24.04, toolchain: gcc-13, std: 23, cmake_config: Asan, clang_version: -1, installed_clang_version: -1}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: 'true'
+      - uses: seanmiddleditch/gha-setup-ninja@master
+      - name: Activate verbose shell
+        run: set -x
+      - name: Install LLVM+Clang
+        if: startsWith(matrix.config.name, 'Ubuntu Clang')
+        run: |
+          set -x
+          cat /etc/lsb-release
+          sudo apt-get remove clang-${{matrix.config.installed_clang_version}} \
+            lldb-${{matrix.config.installed_clang_version}} \
+            lld-${{matrix.config.installed_clang_version}} \
+            clangd-${{matrix.config.installed_clang_version}} \
+            clang-tidy-${{matrix.config.installed_clang_version}} \
+            clang-format-${{matrix.config.installed_clang_version}} \
+            clang-tools-${{matrix.config.installed_clang_version}} \
+            llvm-${{matrix.config.installed_clang_version}}-dev \
+            lld-${{matrix.config.installed_clang_version}} \
+            lldb-${{matrix.config.installed_clang_version}} \
+            llvm-${{matrix.config.installed_clang_version}}-tools \
+            libomp-${{matrix.config.installed_clang_version}}-dev \
+            libc++-${{matrix.config.installed_clang_version}}-dev \
+            libc++abi-${{matrix.config.installed_clang_version}}-dev \
+            libclang-common-${{matrix.config.installed_clang_version}}-dev \
+            libclang-${{matrix.config.installed_clang_version}}-dev \
+            libclang-cpp${{matrix.config.installed_clang_version}}-dev \
+            libunwind-${{matrix.config.installed_clang_version}}-dev
+          wget https://apt.llvm.org/llvm.sh
+          chmod +x llvm.sh
+          sudo ./llvm.sh ${{matrix.config.clang_version}} all
+          sudo apt-get install libc++-dev libc++1 libc++abi-dev libc++abi1
+      - name: Install GCC
+        if: startsWith(matrix.config.name, 'Ubuntu   GCC')
+        run: |
+          set -x
+          cat /etc/lsb-release
+          sudo apt update
+          sudo apt-get install ${{matrix.config.toolchain}}
+      - name: Run tests
+        run: |
+          set -x
+          pwd
+          scripts/run-tests.sh --verbose --fresh --config ${{matrix.config.cmake_config}} --preset ${{matrix.config.toolchain}} --std ${{matrix.config.std}}
