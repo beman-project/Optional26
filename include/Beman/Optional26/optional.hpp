@@ -339,7 +339,7 @@ class optional {
         }
     }
 
-    constexpr optional(const optional&)
+    optional(const optional&)
         requires std::is_copy_constructible_v<T> && std::is_trivially_copy_constructible_v<T>
     = default;
 
@@ -352,7 +352,7 @@ class optional {
         }
     }
 
-    constexpr optional(optional&&)
+    optional(optional&&)
         requires std::is_move_constructible_v<T> && std::is_trivially_move_constructible_v<T>
     = default;
 
@@ -430,7 +430,7 @@ class optional {
         return *this;
     }
 
-    constexpr optional& operator=(const optional&)
+    optional& operator=(const optional&)
         requires std::is_copy_constructible_v<T> && std::is_copy_assignable_v<T> &&
                      std::is_trivially_copy_constructible_v<T> && std::is_trivially_copy_assignable_v<T>
     = default;
@@ -448,7 +448,7 @@ class optional {
         return *this;
     }
 
-    constexpr optional& operator=(optional&&)
+    optional& operator=(optional&&)
         requires std::is_move_constructible_v<T> && std::is_move_assignable_v<T> &&
                      std::is_trivially_move_constructible_v<T> && std::is_trivially_move_assignable_v<T>
     = default;
@@ -939,6 +939,43 @@ auto optional_map_impl(Opt&& opt, F&& f)
 /* optional<T&> */
 /****************/
 
+namespace detail {
+
+#ifdef __cpp_lib_reference_from_temporary
+using std::reference_constructs_from_temporary_v;
+using std::reference_converts_from_temporary_v;
+#else
+template <class To, class From>
+concept reference_converts_from_temporary_v =
+    std::is_reference_v<To> &&
+    (
+        // A prvalue of a type similar to To, so that we're binding directly to the materialized prvalue of type From
+        (!std::is_reference_v<From> && std::is_convertible_v<std::remove_cvref_t<From>*, std::remove_cvref_t<To>*>) ||
+        // A value of an unrelated type, convertible to To, but only by materializing a To and binding a const
+        // reference; if we were trying to bind a non-const reference, we'd be unable to. (This is not quite exhaustive
+        // of the problem cases, but I think it's fairly close in practice.)
+        (std::is_lvalue_reference_v<To> && std::is_const_v<std::remove_reference_t<To>> &&
+         std::is_convertible_v<From, const std::remove_cvref_t<To>&&> &&
+         !std::is_convertible_v<From, std::remove_cvref_t<To>&>));
+
+template <class To, class From>
+concept reference_constructs_from_temporary_v =
+    // This is close in practice, because cases where conversion and construction differ in semantics are rare.
+    reference_converts_from_temporary_v<To, From>;
+#endif
+
+template <class To, class From>
+concept safely_convertible = std::is_convertible_v<From, To> && !reference_converts_from_temporary_v<To, From>;
+
+template <class To, class From>
+concept safely_constructible_not_convertible = std::is_constructible_v<To, From> && !std::is_convertible_v<From, To> &&
+                                               !reference_constructs_from_temporary_v<To, From>;
+
+template <class To, class From>
+concept safely_constructible = std::is_constructible_v<To, From> && !reference_constructs_from_temporary_v<To, From>;
+
+} // namespace detail
+
 template <class T>
 class optional<T&> {
   public:
@@ -1016,37 +1053,51 @@ class optional<T&> {
     // constexpr void reset() noexcept;
 
   private:
-    T* value_; // exposition only
+    T* value_ = nullptr; // exposition only
 
   public:
     //  \rSec3[optional.ctor]{Constructors}
 
-    constexpr optional() noexcept : value_(nullptr) {}
+    optional() = default;
 
     constexpr optional(nullopt_t) noexcept : value_(nullptr) {}
 
-    constexpr optional(const optional& rhs) noexcept = default;
-    constexpr optional(optional&& rhs) noexcept      = default;
-
-    template <class U = T>
-        requires(!detail::is_optional<std::decay_t<U>>)
-    constexpr explicit(!std::is_convertible_v<U, T>) optional(U&& u) noexcept : value_(std::addressof(u)) {
-        static_assert(std::is_constructible_v<std::add_lvalue_reference_t<T>, U>, "Must be able to bind U to T&");
-        static_assert(std::is_lvalue_reference<U>::value, "U must be an lvalue");
-    }
+    optional(const optional& rhs) = default;
+    optional(optional&& rhs)      = default;
 
     template <class U>
-    constexpr explicit(!std::is_convertible_v<U, T>) optional(const optional<U>& rhs) noexcept {
-        static_assert(std::is_constructible_v<std::add_lvalue_reference_t<T>, U>, "Must be able to bind U to T&");
-        if (rhs.has_value())
-            value_ = std::to_address(rhs);
-        else
-            value_ = nullptr;
-    }
+    constexpr explicit optional(U&& u) noexcept(std::is_nothrow_constructible_v<U&&, T&>)
+        requires detail::safely_constructible_not_convertible<T&, U&&>
+        : value_(std::addressof(static_cast<T&>(std::forward<U>(u)))) {}
+
+    template <class U>
+    constexpr optional(U&& u) noexcept(std::is_nothrow_convertible_v<U&&, T&>)
+        requires detail::safely_convertible<T&, U&&>
+        : value_(std::addressof(static_cast<T&>(std::forward<U>(u)))) {}
+
+    template <class U>
+    constexpr explicit optional(const optional<U>& rhs) noexcept(std::is_nothrow_constructible_v<T&, const U&>)
+        requires detail::safely_constructible_not_convertible<T&, const U&>
+        : value_(rhs ? std::addressof(static_cast<T&>(*rhs)) : nullptr) {}
+
+    template <class U>
+    constexpr optional(const optional<U>& rhs) noexcept(std::is_nothrow_convertible_v<const U&, T&>)
+        requires detail::safely_convertible<T&, const U&>
+        : value_(rhs ? std::addressof(static_cast<T&>(*rhs)) : nullptr) {}
+
+    template <class U>
+    constexpr explicit optional(optional<U>& rhs) noexcept(std::is_nothrow_constructible_v<T&, U&>)
+        requires detail::safely_constructible_not_convertible<T&, U&>
+        : value_(rhs ? std::addressof(static_cast<T&>(*rhs)) : nullptr) {}
+
+    template <class U>
+    constexpr optional(optional<U>& rhs) noexcept(std::is_nothrow_convertible_v<U&, T&>)
+        requires detail::safely_convertible<T&, U&>
+        : value_(rhs ? std::addressof(static_cast<T&>(*rhs)) : nullptr) {}
 
     //  \rSec3[optional.dtor]{Destructor}
 
-    constexpr ~optional() = default;
+    ~optional() = default;
 
     // \rSec3[optional.assign]{Assignment}
 
@@ -1055,35 +1106,14 @@ class optional<T&> {
         return *this;
     }
 
-    constexpr optional& operator=(const optional& rhs) noexcept = default;
-    constexpr optional& operator=(optional&& rhs) noexcept      = default;
-
-    template <class U = T>
-        requires(!detail::is_optional<std::decay_t<U>>)
-    constexpr optional& operator=(U&& u) {
-        static_assert(std::is_constructible_v<std::add_lvalue_reference_t<T>, U>, "Must be able to bind U to T&");
-        static_assert(std::is_lvalue_reference<U>::value, "U must be an lvalue");
-        value_ = std::addressof(u);
-        return *this;
-    }
+    optional& operator=(const optional&) = default;
+    optional& operator=(optional&&)      = default;
 
     template <class U>
-    constexpr optional& operator=(const optional<U>& rhs) noexcept {
-        static_assert(std::is_constructible_v<std::add_lvalue_reference_t<T>, U>, "Must be able to bind U to T&");
-        if (rhs.has_value())
-            value_ = std::to_address(rhs);
-        else
-            value_ = nullptr;
-        return *this;
-    }
-
-    template <class U>
-    constexpr optional& operator=(optional<U>&& rhs) = delete;
-
-    template <class U>
-        requires(!detail::is_optional<std::decay_t<U>>)
-    constexpr optional& emplace(U&& u) noexcept {
-        return *this = std::forward<U>(u);
+        requires detail::safely_constructible<T&, U&&>
+    constexpr T& emplace(U&& u) {
+        value_ = std::addressof(static_cast<T&>(std::forward<U>(u)));
+        return *value_;
     }
 
     //   \rSec3[optional.swap]{Swap}
